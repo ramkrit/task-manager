@@ -88,8 +88,17 @@ EOF
 
 ## 4. Build and start the stack
 
+For **local/dev** (includes a bundled MongoDB container):
+
 ```bash
 docker compose up --build -d
+```
+
+For **production on EC2** (no MongoDB container — uses Atlas from
+`backend/.env`), use the production compose file:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
 ```
 
 `-d` runs it detached (in the background).
@@ -106,27 +115,59 @@ docker compose logs -f backend   # Ctrl+C to stop following
 ## 5. Open the app
 
 - Frontend: `http://<EC2_PUBLIC_IP>:3000`
-- API:      `http://<EC2_PUBLIC_IP>:4000/api`
+- API:      `http://<EC2_PUBLIC_IP>:4000/api/v1`
 - Swagger:  `http://<EC2_PUBLIC_IP>:4000/api/docs`
 
 ---
 
 ## Managing the deployment
 
+Use `-f docker-compose.prod.yml` for all commands in production.
+
 ```bash
 # Stop
-docker compose down
-
-# Stop and wipe the database volume
-docker compose down -v
+docker compose -f docker-compose.prod.yml down
 
 # Rebuild after pulling new code
 git pull
-docker compose up --build -d
+docker compose -f docker-compose.prod.yml up --build -d
 
 # View logs
-docker compose logs -f
+docker compose -f docker-compose.prod.yml logs -f
 ```
+
+---
+
+## Updating an already-running production stack
+
+If the app is already running on EC2 (e.g. from the old compose file that
+included a `mongo` container) and you want to apply the `v1` API change **and**
+stop running MongoDB in Docker:
+
+```bash
+# 1. Pull the latest code (now includes docker-compose.prod.yml)
+cd task-manager
+git pull
+
+# 2. Make sure backend/.env points MONGODB_URI at Atlas (NOT mongo:27017)
+#    and frontend/.env + root .env use the /api/v1 path. See sections above.
+
+# 3. Tear down the OLD stack. If the old one ran the mongo container and you
+#    want to remove its data volume too, add -v:
+docker compose down            # old file; add -v only if you want to drop the local DB
+
+# 4. Bring everything up with the production file (backend + frontend only).
+#    --build is required so the frontend bakes in the new /api/v1 URL.
+docker compose -f docker-compose.prod.yml up --build -d
+
+# 5. Verify
+docker compose -f docker-compose.prod.yml ps
+curl http://localhost:4000/api/v1/tasks
+```
+
+> The `mongo` container and its `mongo-data` volume are simply not part of
+> `docker-compose.prod.yml`, so once you switch to that file they will no longer
+> be started. Your data lives in Atlas.
 
 ---
 
